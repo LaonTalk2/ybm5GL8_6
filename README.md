@@ -1,5 +1,6 @@
 [README_L8_wrapup_app.md](https://github.com/user-attachments/files/32799770/README_L8_wrapup_app.md)
-# Lesson 8 · What Does He Look Like? — 6차시 Wrap Up 미션 평가 앱
+# Lesson 8 · What Does He Look Like? 
+YBM(최희경) 영어 5학년 8단원 — 6차시 Wrap Up 미션 평가 앱
 
 `L8_(6차시)종합평가wrapup_app (7) 공유.html`
 
