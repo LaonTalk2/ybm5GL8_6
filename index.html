@@ -182,23 +182,67 @@ function lsKeys(p){
   }
   return Object.keys(MEM).filter(function(k){ return k.indexOf(p)===0; });
 }
+/* ---------- Google Apps Script 연동 (반 전체 공유 저장소) ----------
+   1) Google 스프레드시트를 새로 만들고 [확장 프로그램 > Apps Script]에서
+      안내받은 Code.gs 내용을 붙여넣어 웹앱으로 배포합니다.
+   2) 배포 후 나온 웹앱 URL을 아래 GAS_URL 자리에 그대로 붙여넣습니다.
+   3) 값을 넣지 않으면(비워두면) 예전처럼 기기별 localStorage로만 동작합니다. */
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbxGFcEHemGPeYnA2rDB4CbhJ6IVr74SgQWuzLdpWOaTfGAOnAOqK7oBlmiEcsXznZ53Dg/exec';
+
+function gasConfigured(){
+  return !!GAS_URL && GAS_URL.indexOf('여기에') === -1;
+}
+function gasFetch(action, query, method, body){
+  var url = GAS_URL + '?action=' + action + (query ? '&' + query : '');
+  var opts = { method: method || 'GET' };
+  if (method === 'POST'){
+    /* text/plain으로 보내면 브라우저의 CORS 사전요청(preflight)이 생략되어
+       Apps Script 웹앱과 바로 통신할 수 있다 */
+    opts.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+    opts.body = JSON.stringify(body || {});
+  }
+  return fetch(url, opts).then(function(r){
+    if (!r.ok) throw new Error('gas http ' + r.status);
+    return r.json();
+  });
+}
 var store = {
   get: function(k, s){
     if (window.storage) return window.storage.get(k, s);
-    var v = lsGet(k);
-    return v === null ? Promise.reject(new Error('nf')) : Promise.resolve({key:k, value:v});
+    if (!gasConfigured()){
+      var v = lsGet(k);
+      return v === null ? Promise.reject(new Error('nf')) : Promise.resolve({key:k, value:v});
+    }
+    return gasFetch('get', 'key=' + encodeURIComponent(k)).then(function(res){
+      if (res.value === null || res.value === undefined) return Promise.reject(new Error('nf'));
+      return { key:k, value: res.value };
+    }).catch(function(err){
+      var v = lsGet(k);
+      return v === null ? Promise.reject(err) : Promise.resolve({key:k, value:v});
+    });
   },
   set: function(k, v, s){
     if (window.storage) return window.storage.set(k, v, s);
-    lsSet(k, v); return Promise.resolve({key:k, value:v});
+    lsSet(k, v); /* 네트워크가 불안정해도 기기 안에는 즉시 남도록 로컬에도 저장 */
+    if (!gasConfigured()) return Promise.resolve({key:k, value:v});
+    return gasFetch('set', null, 'POST', { key:k, value:v }).then(function(){
+      return { key:k, value:v };
+    }).catch(function(){ return { key:k, value:v }; });
   },
   del: function(k, s){
     if (window.storage) return window.storage.delete(k, s);
-    lsDel(k); return Promise.resolve({key:k, deleted:true});
+    lsDel(k);
+    if (!gasConfigured()) return Promise.resolve({key:k, deleted:true});
+    return gasFetch('delete', null, 'POST', { key:k }).then(function(){
+      return { key:k, deleted:true };
+    }).catch(function(){ return { key:k, deleted:true }; });
   },
   list: function(p, s){
     if (window.storage) return window.storage.list(p, s);
-    return Promise.resolve({keys:lsKeys(p)});
+    if (!gasConfigured()) return Promise.resolve({keys:lsKeys(p)});
+    return gasFetch('list', 'prefix=' + encodeURIComponent(p||'')).then(function(res){
+      return { keys: res.keys || [] };
+    }).catch(function(){ return { keys: lsKeys(p) }; });
   }
 };
 
@@ -595,7 +639,7 @@ var WRITING_SUBS = [
 ];
 
 /* ---------- app state ---------- */
-var BANK = null, SETTINGS = {pin:'1234'}, RESULTS = [], HOF = [], hofReady = false;
+var BANK = null, SETTINGS = {pin:'3044'}, RESULTS = [], HOF = [], hofReady = false;
 var screen = 'home';
 var session = null;     // {student, steps, idx, answers, startedAt}
 var stepState = null;   // per-question working state
@@ -645,7 +689,7 @@ function saveBank(){
 }
 function loadSettings(){
   return store.get('settings:v1', true).then(function(r){ SETTINGS = JSON.parse(r.value); })
-    .catch(function(){ SETTINGS = {pin:'1234'}; });
+    .catch(function(){ SETTINGS = {pin:'3044'}; });
 }
 function saveSettings(){ return store.set('settings:v1', JSON.stringify(SETTINGS), true); }
 function loadResults(){
@@ -1248,7 +1292,7 @@ function viewTeacher(){
   if (!teacherAuthed){
     h += '<div class="card"><div class="eyebrow">Teacher</div><h2 class="display">교사 모드</h2>'
       + '<p class="muted">문제와 보기를 고치고, 학생 기록을 볼 수 있어요.</p>'
-      + '<label class="f" for="pin">PIN (처음 값은 1234)</label>'
+      + '<label class="f" for="pin">PIN (처음 값은 3044)</label>'
       + '<input id="pin" type="password" inputmode="numeric" style="max-width:180px">'
       + '<div class="row" style="margin-top:12px"><button class="btn btn-primary" id="pinok">들어가기</button></div></div>';
     return h;
